@@ -1,0 +1,35 @@
+const r=require('express').Router(),{db,uid,parts}=require('../database');
+r.get('/list',(q,s)=>{const u=q.user.id,rows=[];
+const base=(id,type,name,avatar,masked,verified)=>{const l=db.prepare('select body,ts from messages where chat_id=? order by message_id desc limit 1').get(id)||{};
+const rd=db.prepare('select last from reads where chat_id=? and user_id=?').get(id,u)||{last:0};
+rows.push({id,type,name,avatar,masked,verified,last:l.body,ts:l.ts||0,unread:db.prepare('select count(*) n from messages where chat_id=? and message_id>? and owner_id!=?').get(id,rd.last,u).n})};
+for(const c of db.prepare('select * from chats where a=? or b=?').all(u,u)){const o=db.prepare('select * from users where id=?').get(c.a===u?c.b:c.a);base(c.id,'chat',o.username,o.avatar,o.masked,o.is_admin)}
+for(const g of db.prepare('select g.* from groups g join members m on m.group_id=g.id where m.user_id=? and m.left_at is null').all(u))base(g.id,'group',g.name,g.avatar,'',g.official);
+rows.sort((a,b)=>(b.unread>0)-(a.unread>0)||b.ts-a.ts);s.json(rows)});
+r.post('/start',(q,s)=>{const me=q.user,o=db.prepare('select * from users where masked=?').get(q.body.masked);
+if(!o||o.id===me.id||(o.paused&&!me.is_admin))return s.status(404).json({error:'nf'});
+const [a,b]=[me.id,o.id].sort(),ex=db.prepare('select id from chats where a=? and b=?').get(a,b);
+if(ex)return s.json({id:ex.id});
+if(!o.find_all&&!me.is_admin)return s.status(403).json({error:'private'});
+const id=uid();db.prepare('insert into chats values(?,?,?)').run(id,a,b);q.app.get('io').to(o.id).emit('chats');s.json({id})});
+const gadmin=(c,u)=>{const g=db.prepare('select admin_id from groups where id=?').get(c);return !!g&&(g.admin_id===u.id||!!u.is_admin)};
+r.get('/:id/messages',(q,s)=>{const c=q.params.id;if(!parts(c).includes(q.user.id))return s.status(403).json({error:'forbidden'});
+const g=db.prepare('select * from groups where id=?').get(c),mod=gadmin(c,q.user);
+const m=db.prepare('select m.message_id,m.body,m.ts,m.owner_id,u.username,u.masked,u.is_admin from messages m join users u on u.id=m.owner_id where chat_id=? order by message_id').all(c)
+.map(x=>({message_id:x.message_id,body:x.body,ts:x.ts,name:x.username,masked:x.masked,verified:x.is_admin,badge:!!g&&g.admin_id===x.owner_id,mine:x.owner_id===q.user.id,canDelete:x.owner_id===q.user.id||mod}));
+const last=m.length?m[m.length-1].message_id:0;db.prepare('insert or replace into reads values(?,?,?)').run(c,q.user.id,last);
+s.json({group:g?{name:g.name,canSend:g.send_mode==='all'||mod}:null,messages:m})});
+r.post('/:id/messages',(q,s)=>{const c=q.params.id,body=String(q.body.body||'').trim().slice(0,2000);
+if(!body||!parts(c).includes(q.user.id))return s.status(403).json({error:'forbidden'});
+const g=db.prepare('select * from groups where id=?').get(c);if(g&&g.send_mode==='admin'&&!gadmin(c,q.user))return s.status(403).json({error:'readonly'});
+const mid=(db.prepare('select max(message_id) m from messages where chat_id=?').get(c).m||0)+1;
+db.prepare('insert into messages values(?,?,?,?,?)').run(c,mid,q.user.id,body,Date.now());
+for(const p of parts(c))q.app.get('io').to(p).emit('msg',{chat:c});s.json({message_id:mid})});
+r.delete('/:id/messages/:mid',(q,s)=>{const c=q.params.id,m=db.prepare('select owner_id from messages where chat_id=? and message_id=?').get(c,q.params.mid);
+if(!m)return s.status(404).json({error:'nf'});if(m.owner_id!==q.user.id&&!gadmin(c,q.user))return s.status(403).json({error:'forbidden'});
+const ps=parts(c);db.prepare('delete from messages where chat_id=? and message_id=?').run(c,q.params.mid);ps.forEach(p=>q.app.get('io').to(p).emit('msg',{chat:c}));s.json({ok:1})});
+r.delete('/:id',(q,s)=>{const c=db.prepare('select * from chats where id=?').get(q.params.id);
+if(!c||(c.a!==q.user.id&&c.b!==q.user.id))return s.status(404).json({error:'nf'});
+db.prepare('delete from messages where chat_id=?').run(c.id);db.prepare('delete from chats where id=?').run(c.id);
+[c.a,c.b].forEach(p=>q.app.get('io').to(p).emit('chatgone',c.id));s.json({ok:1})});
+module.exports=r;

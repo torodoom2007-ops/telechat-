@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Telechat</title><link rel="stylesheet" href="style.css"></head><body>
+<div id="auth" class="card"><button id="lang" class="link"></button><h1>Telechat</h1>
+<div class="tabs"><button data-t="login" class="on" data-i="login"></button><button data-t="reg" data-i="register"></button></div>
+<input id="u" data-p="username" maxlength="30"><div id="idrow" hidden class="idrow"><span dir="ltr">Telechat-</span><input id="dg" inputmode="numeric" maxlength="5" placeholder="12345" dir="ltr"></div>
+<input id="pw" type="password" data-p="password" maxlength="15"><label class="chk"><input id="rem" type="checkbox"> <span data-i="remember"></span></label>
+<button id="go" class="btn"></button><p id="err" class="err"></p></div>
+<div id="app" hidden><div id="pages"><section id="p1"><div id="chats"></div><button id="fab" aria-label="new"></button></section>
+<section id="p2"><div class="search"><span id="mg"></span><input id="q" data-p="search"></div><div id="feed"></div></section>
+<section id="p3"></section><section id="p4" hidden></section></div>
+<nav id="nav"></nav></div>
+<div id="ov" hidden></div><div id="toast"></div><script src="/socket.io/socket.io.js"></script><script src="app.js"></script></body></html>

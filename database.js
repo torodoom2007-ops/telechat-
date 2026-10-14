@@ -1,0 +1,20 @@
+const Database=require('better-sqlite3'),crypto=require('crypto');
+const db=new Database(process.env.DB_PATH||'telechat.db');db.pragma('journal_mode=WAL');
+db.exec(`
+CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,masked TEXT UNIQUE,username TEXT,pass TEXT,avatar TEXT,bio TEXT DEFAULT '',link TEXT DEFAULT '',is_admin INT DEFAULT 0,paused INT DEFAULT 0,find_all INT DEFAULT 1,pic_all INT DEFAULT 1,link_public INT DEFAULT 1,name_changes INT DEFAULT 0,name_day TEXT,onboarded INT DEFAULT 0,last_seen INT);
+CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id TEXT);
+CREATE TABLE IF NOT EXISTS banned(masked TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS chats(id TEXT PRIMARY KEY,a TEXT,b TEXT,UNIQUE(a,b));
+CREATE TABLE IF NOT EXISTS groups(id TEXT PRIMARY KEY,name TEXT,descr TEXT DEFAULT '',avatar TEXT,admin_id TEXT,official INT DEFAULT 0,send_mode TEXT DEFAULT 'all');
+CREATE TABLE IF NOT EXISTS members(group_id TEXT,user_id TEXT,left_at INT,PRIMARY KEY(group_id,user_id));
+CREATE TABLE IF NOT EXISTS messages(chat_id TEXT,message_id INTEGER,owner_id TEXT,body TEXT,ts INT,PRIMARY KEY(chat_id,message_id));
+CREATE TABLE IF NOT EXISTS reads(chat_id TEXT,user_id TEXT,last INT DEFAULT 0,PRIMARY KEY(chat_id,user_id));`);
+const hash=p=>{const s=crypto.randomBytes(8).toString('hex');return s+':'+crypto.scryptSync(p,s,32).toString('hex')};
+const check=(p,h)=>{const[s,x]=h.split(':');return crypto.scryptSync(p,s,32).toString('hex')===x};
+const uid=()=>crypto.randomUUID();
+const ADMIN='ADMIN_OWNER_TELECHAT ™';
+if(!db.prepare('select 1 from users where is_admin=1').get())db.prepare('insert into users(id,masked,username,pass,is_admin,onboarded) values(?,?,?,?,1,1)').run(ADMIN,ADMIN,ADMIN,hash(process.env.ADMIN_PASSWORD||'poopp00p'));
+const auth=(q,s,n)=>{const t=(q.headers.authorization||'').slice(7);const u=db.prepare('select u.* from sessions x join users u on u.id=x.user_id where token=?').get(t);if(!u)return s.status(401).json({error:'auth'});q.user=u;db.prepare('update users set last_seen=? where id=?').run(Date.now(),u.id);n()};
+const parts=c=>{const ch=db.prepare('select a,b from chats where id=?').get(c);return ch?[ch.a,ch.b]:db.prepare('select user_id from members where group_id=? and left_at is null').all(c).map(x=>x.user_id)};
+const isContact=(a,b)=>!!db.prepare('select 1 from chats where (a=? and b=?) or (a=? and b=?)').get(a,b,b,a);
+module.exports={db,hash,check,uid,auth,parts,isContact,ADMIN};
